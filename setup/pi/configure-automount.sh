@@ -50,4 +50,5 @@ do
     ln -s "/tmp/snapshots/$(basename "$snapdir")" "${snapdir}/mnt"
   fi
 done
+systemctl restart autofs.service
 log_progress "configured automount"

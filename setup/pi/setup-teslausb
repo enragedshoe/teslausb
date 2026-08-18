@@ -894,7 +894,7 @@ done
 # Update config.txt if needed
 if [ -f "$PICONFIG_PATH" ]
 then
-  if ! grep -q 'dtoverlay=dwc2$' "$PICONFIG_PATH"
+  if ! grep -Eq '^[[:space:]]*dtoverlay=dwc2([,[:space:]]|$)' "$PICONFIG_PATH"
   then
     echo -e "dtoverlay=dwc2\n" >> "$PICONFIG_PATH"
     setup_progress "rebooting to apply dwc2 overlay change"
@@ -915,21 +915,26 @@ else
   setup_progress "WARNING: $BRANCHNAME contains a different version of $0. It is recommended to run '$0 upgrade' to get the latest version."
 fi
 
-copy_script pi-gen-sources/00-teslausb-tweaks/files/rc.local "$tmpdir" &> /dev/null
-if cmp -s "$tmpdir/rc.local" /etc/rc.local
+if [ "${INSTALL_RC_LOCAL:-true}" = "true" ]
 then
-  setup_progress "rc.local is up to date"
-else
-  setup_progress "updating rc.local"
-  mv "$tmpdir/rc.local" /etc/rc.local
-  parent=$(ps -o ppid= $PPID)
-  grandparent=$(ps -o ppid= "$((parent))" )
-  caller=$(ps -o comm= "$((grandparent))")
-  if [ "$caller" = "rc.local" ] && [ ! -t 0 ]
+  copy_script pi-gen-sources/00-teslausb-tweaks/files/rc.local "$tmpdir" &> /dev/null
+  if cmp -s "$tmpdir/rc.local" /etc/rc.local
   then
-    setup_progress "rebooting to run updated rc.local"
-    exec reboot
+    setup_progress "rc.local is up to date"
+  else
+    setup_progress "updating rc.local"
+    mv "$tmpdir/rc.local" /etc/rc.local
+    parent=$(ps -o ppid= $PPID)
+    grandparent=$(ps -o ppid= "$((parent))" )
+    caller=$(ps -o comm= "$((grandparent))")
+    if [ "$caller" = "rc.local" ] && [ ! -t 0 ]
+    then
+      setup_progress "rebooting to run updated rc.local"
+      exec reboot
+    fi
   fi
+else
+  setup_progress "preserving existing systemd boot configuration (rc.local install disabled)"
 fi
 
 update_package_index
@@ -987,21 +992,34 @@ fi
 copy_script setup/pi/configure-automount.sh /tmp
 /tmp/configure-automount.sh
 
-copy_script setup/pi/configure-web.sh /tmp
-/tmp/configure-web.sh
+if [ "${CONFIGURE_WEB:-true}" = "true" ]
+then
+  copy_script setup/pi/configure-web.sh /tmp
+  /tmp/configure-web.sh
+else
+  setup_progress "skipping TeslaUSB web UI"
+fi
 
-copy_script setup/pi/configure-ssh.sh /tmp
-/tmp/configure-ssh.sh
+if [ "${CONFIGURE_SSH:-true}" = "true" ]
+then
+  copy_script setup/pi/configure-ssh.sh /tmp
+  /tmp/configure-ssh.sh
+else
+  setup_progress "preserving existing SSH configuration"
+fi
 
 # source setup-teslausb from .bashrc to set up completion
-if ! grep -q envsetup.sh /root/.bashrc
+if [ "${CONFIGURE_SHELL_TIPS:-true}" = "true" ] && ! grep -q envsetup.sh /root/.bashrc
 then
   echo "source /root/bin/envsetup.sh" >> /root/.bashrc
 fi
-sed -i '/source \/root\/bin\/setup-teslausb/d' /root/.bashrc
+if [ "${CONFIGURE_SHELL_TIPS:-true}" = "true" ]
+then
+  sed -i '/source \/root\/bin\/setup-teslausb/d' /root/.bashrc
+fi
 
 # UX courtesy reminders
-if ! grep -q TESLAUSB_TIP1 /root/.bashrc
+if [ "${CONFIGURE_SHELL_TIPS:-true}" = "true" ] && ! grep -q TESLAUSB_TIP1 /root/.bashrc
 then
   cat >> /root/.bashrc <<- EOC
 	if [ -n "\$PS1" ]; then
@@ -1015,7 +1033,7 @@ then
 fi
 
 DEFUSER=$(grep ":1000:1000:" /etc/passwd | awk -F : '{print $1}')
-if [ -n "$DEFUSER" ]
+if [ "${CONFIGURE_SHELL_TIPS:-true}" = "true" ] && [ -n "$DEFUSER" ]
 then
   if ! grep -q TESLAUSB_TIP1 "/home/$DEFUSER/.bashrc"
   then

@@ -86,6 +86,30 @@ function check_available_space () {
 function check_available_space_sd () {
   setup_progress "Verifying that there is sufficient space available on the MicroSD card..."
 
+  # teslaBox uses labelled loop-backed filesystems on its existing NVMe root.
+  # Validate those directly instead of requiring unpartitioned disk space.
+  if findmnt -rn --mountpoint /backingfiles > /dev/null && \
+     findmnt -rn --mountpoint /mutable > /dev/null
+  then
+    local backingfiles_source
+    backingfiles_source=$(findmnt -rn -o SOURCE --mountpoint /backingfiles)
+    if [ "$(findmnt -rn -o FSTYPE --mountpoint /backingfiles)" != "xfs" ] || \
+       [ "$(findmnt -rn -o FSTYPE --mountpoint /mutable)" != "ext4" ] || \
+       [ "$(blkid -s LABEL -o value "$backingfiles_source")" != "backingfiles" ]
+    then
+      setup_progress "STOP: pre-provisioned TeslaUSB filesystems have an unexpected type or label"
+      exit 1
+    fi
+    backingfiles_size=$(blockdev --getsize64 "$backingfiles_source")
+    if [ "$backingfiles_size" -lt $(( (1<<30) * 32)) ]
+    then
+      setup_progress "STOP: Existing backingfiles filesystem is too small"
+      exit 1
+    fi
+    setup_progress "There is sufficient space available in the pre-provisioned backing store."
+    return
+  fi
+
   # check if backingfiles and mutable already exist
   if [ -e /dev/disk/by-label/backingfiles ] && [ -e /dev/disk/by-label/mutable ]
   then

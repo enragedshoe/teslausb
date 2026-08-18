@@ -32,6 +32,27 @@ function partition_prefix_for {
 
 BACKINGFILES_MOUNTPOINT="${1:-none}"
 MUTABLE_MOUNTPOINT="${2:-none}"
+
+# teslaBox keeps its operating system on a fully allocated NVMe filesystem.
+# Allow pre-provisioned, labelled loop-backed filesystems so setup never edits
+# the boot disk's partition table.
+if findmnt -rn --mountpoint "$BACKINGFILES_MOUNTPOINT" > /dev/null && \
+   findmnt -rn --mountpoint "$MUTABLE_MOUNTPOINT" > /dev/null
+then
+  BACKINGFILES_SOURCE=$(findmnt -rn -o SOURCE --mountpoint "$BACKINGFILES_MOUNTPOINT")
+  MUTABLE_SOURCE=$(findmnt -rn -o SOURCE --mountpoint "$MUTABLE_MOUNTPOINT")
+  if [ "$(findmnt -rn -o FSTYPE --mountpoint "$BACKINGFILES_MOUNTPOINT")" = "xfs" ] && \
+     [ "$(findmnt -rn -o FSTYPE --mountpoint "$MUTABLE_MOUNTPOINT")" = "ext4" ] && \
+     [ "$(blkid -s LABEL -o value "$BACKINGFILES_SOURCE")" = "backingfiles" ] && \
+     [ "$(blkid -s LABEL -o value "$MUTABLE_SOURCE")" = "mutable" ]
+  then
+    log_progress "using pre-provisioned loop-backed filesystems"
+    exit 0
+  fi
+  log_progress "STOP: pre-mounted backingfiles or mutable filesystem has an unexpected type or label"
+  exit 1
+fi
+
 function update_fstab {
   if grep -q "LABEL=backingfiles" /etc/fstab
   then
